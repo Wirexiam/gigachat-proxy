@@ -4,13 +4,13 @@ import dotenv from "dotenv";
 import crypto from "crypto";
 
 dotenv.config();
+
 const app = express();
 app.use(express.json());
 
-let cachedToken = null;
-let tokenExpiry = 0;
+const PORT = process.env.PORT || 3000;
 
-app.post("/chat", async (req, res) => {
+app.post("/", async (req, res) => {
   const { prompt, model = "GigaChat", temperature = 0.7, max_tokens = 1024 } = req.body;
   if (!prompt) return res.status(400).json({ error: "❌ No prompt provided" });
 
@@ -34,40 +34,34 @@ app.post("/chat", async (req, res) => {
     const data = await response.json();
     if (!response.ok) return res.status(500).json({ error: data });
 
-    return res.status(200).json({ result: data.choices[0].message.content.trim() });
-
+    res.json({ result: data.choices[0].message.content.trim() });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
+app.get("/", (req, res) => {
+  res.send("✅ GigaChat-прокси работает на Railway");
+});
+
+app.listen(PORT, () => {
+  console.log("🔌 Сервер запущен на порту:", PORT);
+});
+
 async function getAccessToken() {
-  const now = Date.now();
-  if (cachedToken && tokenExpiry > now) return cachedToken;
-
   const basicAuth = process.env.GIGACHAT_AUTH_KEY;
-  if (!basicAuth) throw new Error("❌ Missing GIGACHAT_AUTH_KEY");
-
   const response = await fetch("https://ngw.devices.sberbank.ru:9443/api/v2/oauth", {
     method: "POST",
     headers: {
-      "Authorization": "Basic " + basicAuth,
+      Authorization: "Basic " + basicAuth,
       "Content-Type": "application/x-www-form-urlencoded",
-      "Accept": "application/json",
-      "RqUID": crypto.randomUUID()
+      Accept: "application/json",
+      RqUID: crypto.randomUUID()
     },
     body: "scope=GIGACHAT_API_PERS"
   });
 
   const json = await response.json();
   if (!json.access_token) throw new Error("❌ Не удалось получить access_token");
-
-  cachedToken = json.access_token;
-  tokenExpiry = now + 29 * 60 * 1000;
-  return cachedToken;
+  return json.access_token;
 }
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 GigaChat proxy listening on http://localhost:${PORT}`);
-});
